@@ -24,3 +24,6 @@ per issue. Status: todo / in-progress / blocked / done.
 | MT-17 | Duplicate-webhook empirical replay | `testing/api-tester` | sprint-7-26-19-26 | blocked (MT-14) | [spec](sprint-7-26-19-26/issue-specs/pricing-pipeline.md#3-payments--webhook) |
 | MT-18 | OPSEC gate: F1/F2/F4/F6 blockers before go-live | `security/appsec-engineer` | sprint-7-26-19-26 | todo (go-live blocker) | [opsec-gate](sprint-7-26-19-26/opsec-gate.md) |
 | MT-19 | Operator-identity two-plane register (F9, PRD §6) | `legal/general-counsel` | sprint-7-26-19-26 | todo | [opsec-gate](sprint-7-26-19-26/opsec-gate.md) |
+| MT-20 | Store & serving topology on Supabase (ADR) | `logicians/software-architect` | sprint-7-26-19-26 | done → [ADR-0002](sprint-7-26-19-26/adr/ADR-0002-supabase-store-environments.md) | [prd §7](sprint-7-26-19-26/prd.md) |
+| MT-21 | Test/prod environments (self-hosted Supabase on Docker) | `devops/containerization-engineer` | sprint-7-26-19-26 | done (`environments/`, compose-config verified) | [prd §7](sprint-7-26-19-26/prd.md) |
+| MT-22 | Postgres schema + reversible migrations + RLS | `backend/backend-dev` | sprint-7-26-19-26 | done (`pipeline/db/`, up+down verified on PG16) | [prd §4,§7](sprint-7-26-19-26/prd.md) |
