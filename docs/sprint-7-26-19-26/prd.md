@@ -15,7 +15,16 @@ Numbered, so issues can cite `prd.md §n`.
 
 1. Price shown is a pure function of `{state_code}` + the region's current
    experiment arm — identical for all visitors in a state at a given time,
-   regardless of device, browser, OS, or finer-grained location.
+   regardless of device, browser, OS, or finer-grained location. `state_code`
+   is **server-derived from the connecting IP**, never trusted from the client
+   (threat-model F1).
+7. Two environments with byte-for-byte image parity: a **test** environment on
+   self-hosted Supabase (Docker) and a **production** environment on a managed
+   Supabase (or equivalent Postgres). Config comes from the environment, not a
+   rebuild; no secrets in the repo or images.
+8. The assigned price is **server-authoritative** and bound to the charge: the
+   Checkout amount is read from the store, not the client, and the webhook
+   asserts it matches before fulfilling (threat-model F2).
 2. Pricing inputs are capped at U.S. state granularity; device is captured for
    UX/conversion analytics only and is structurally barred from the price path.
 3. Each region converges toward its revenue-maximizing candidate price via
@@ -30,10 +39,15 @@ Numbered, so issues can cite `prd.md §n`.
 
 ## Constraints
 
-- No new paid infrastructure beyond a domain + Stripe (pay-per-transaction).
+- Infra: domain + Stripe + **Supabase (Postgres)**. Test = self-hosted
+  Supabase on Docker (free); prod = managed Supabase or equivalent. (Supersedes
+  the earlier "domain + Stripe only" — see ADR-0002.)
 - Transparent-by-construction: no dark patterns, no hidden surcharges.
+- Same image promotes test → prod; environment supplies config; no secrets
+  committed.
 - Must pass the Ges-Talt verdict loop (static review + statistical validity +
-  reality-check) before any paid page goes live.
+  reality-check) and the OPSEC gate (F1/F2/F4/F6 closed) before any paid page
+  goes live.
 
 ## Success criteria
 
