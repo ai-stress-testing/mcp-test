@@ -211,3 +211,102 @@ def upsert_epoch_assignment(conn: psycopg.Connection, region: str, epoch_id: int
             "on conflict (region, epoch_id) do nothing",
             (region, epoch_id, price_cents, variant_id),
         )
+
+
+# --- interaction_event (owner-only analytics / heatmap capture) --------------
+#
+# F8: session_id is the analytics cookie value (main.py's
+# ANALYTICS_COOKIE_NAME), never assignment_event.visitor_id -- nothing in
+# this section joins interaction_event to visitor_id/orders. Every read
+# helper below returns an AGGREGATE (counts/bins), never a per-session
+# row, matching the owner-only /admin/metrics and /admin/heatmap contract
+# in main.py.
+
+def insert_interaction_event(conn: psycopg.Connection, session_id: str, event_type: str,
+                              path: str, x_pct: Optional[int], y_pct: Optional[int],
+                              scroll_pct: Optional[int], viewport_w: int) -> None:
+    """Bounded-field insert -- every value here has already been validated
+    and clamped by main.py's /track handler; the interaction_event CHECK
+    constraints (0006 migration) are the database-level backstop, same
+    "app validates, schema backstops" pattern as F2 in 0003/0005."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into public.interaction_event "
+            "(session_id, event_type, path, x_pct, y_pct, scroll_pct, viewport_w) "
+            "values (%s, %s, %s, %s, %s, %s, %s)",
+            (session_id, event_type, path, x_pct, y_pct, scroll_pct, viewport_w),
+        )
+
+
+def region_metrics(conn: psycopg.Connection) -> list[dict]:
+    """Per (region, price arm) trials/conversions/revenue for the owner
+    dashboard -- same distinct-visitor analysis unit as arm_stats_for_region,
+    across all regions at once, plus revenue actually collected
+    (orders.price_paid_cents, not the arm's nominal price)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "select ae.region as region, ae.price_cents as price_cents, "
+            "count(distinct ae.visitor_id) as trials, "
+            "count(distinct o.visitor_id) as conversions, "
+            "coalesce(sum(o.price_paid_cents), 0) as revenue_cents "
+            "from public.assignment_event ae "
+            "left join public.orders o on o.visitor_id = ae.visitor_id "
+            "group by ae.region, ae.price_cents "
+            "order by ae.region, ae.price_cents"
+        )
+        return cur.fetchall()
+
+
+def funnel_counts(conn: psycopg.Connection) -> dict:
+    """Top-of-funnel counts: pageview -> cta_view -> cta_click (distinct
+    analytics sessions) -> order (row count). The funnel is intentionally
+    NOT a per-user joined pipeline -- interaction_event.session_id is
+    structurally unlinkable to orders/assignment_event (F8) -- so this
+    reports independent stage counts, not a single cohort's drop-off."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "select event_type, count(distinct session_id) as sessions "
+            "from public.interaction_event "
+            "where event_type in ('pageview', 'cta_view', 'cta_click') "
+            "group by event_type"
+        )
+        by_type = {row["event_type"]: row["sessions"] for row in cur.fetchall()}
+        cur.execute("select count(*) as n from public.orders")
+        orders_n = cur.fetchone()["n"]
+    return {
+        "pageview": by_type.get("pageview", 0),
+        "cta_view": by_type.get("cta_view", 0),
+        "cta_click": by_type.get("cta_click", 0),
+        "order": orders_n,
+    }
+
+
+def heatmap_bins(conn: psycopg.Connection, path: str, bin_size_pct: int = 10) -> tuple[list[dict], list[dict]]:
+    """Aggregated click-density bins (x_pct/y_pct grouped into
+    bin_size_pct-wide grid cells) and a scroll-depth histogram (10pt
+    buckets, distinct sessions) for one path. Returns COUNTS ONLY -- no
+    query in this function or its caller (main.py's /admin/heatmap)
+    selects session_id or any other per-row field out to the response."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "select (x_pct / %(bin)s)::int as x_bin, (y_pct / %(bin)s)::int as y_bin, "
+            "count(*) as clicks "
+            "from public.interaction_event "
+            "where path = %(path)s and event_type = 'click' "
+            "and x_pct is not null and y_pct is not null "
+            "group by x_bin, y_bin "
+            "order by x_bin, y_bin",
+            {"bin": bin_size_pct, "path": path},
+        )
+        click_bins = cur.fetchall()
+
+        cur.execute(
+            "select (scroll_pct / 10)::int as bucket, count(distinct session_id) as sessions "
+            "from public.interaction_event "
+            "where path = %(path)s and event_type = 'scroll' and scroll_pct is not null "
+            "group by bucket "
+            "order by bucket",
+            {"path": path},
+        )
+        scroll_hist = cur.fetchall()
+    return click_bins, scroll_hist

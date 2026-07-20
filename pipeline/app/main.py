@@ -24,13 +24,14 @@ reviews/security-threat-model.md, opsec-gate.md):
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import secrets
 import sys
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 # pricing_engine.py lives one directory up (pipeline/), outside this
@@ -46,6 +47,7 @@ if _PIPELINE_DIR not in sys.path:
     sys.path.insert(0, _PIPELINE_DIR)
 from pricing_engine import DEFAULT_REGION, PricingEngine, canonical_region  # noqa: E402
 
+import owner_auth  # sibling module -- owner-only /admin/* auth gate
 import store  # sibling module -- flat import to match `uvicorn main:app`
 import stripe_gateway  # (Dockerfile CMD, no package context)
 
@@ -56,6 +58,25 @@ DISCLOSURE = (
     "Pricing may vary by region and is determined automatically based on "
     "your approximate location at time of purchase."
 )
+
+# --- interaction capture (owner-only analytics / heatmap, product-brief
+# "owner-only analytics" + threat-model/opsec-gate F8) -------------------
+#
+# ANALYTICS_COOKIE_NAME is DELIBERATELY separate from VISITOR_COOKIE_NAME:
+# the interaction_event.session_id it carries is never read into a
+# pricing decision and is never joined to visitor_id/orders anywhere in
+# this file, store.py, or the schema (0006 migration) -- see that
+# migration's header comment. Reusing VISITOR_COOKIE_NAME here would
+# silently make analytics re-identifiable against order data; that's the
+# one thing this split exists to prevent.
+ANALYTICS_COOKIE_NAME = "session_id"
+ALLOWED_INTERACTION_EVENT_TYPES = frozenset(
+    {"pageview", "click", "scroll", "cta_view", "cta_click"}
+)
+MAX_TRACK_BODY_BYTES = 4096
+MAX_LOGIN_BODY_BYTES = 1024
+MAX_PATH_LEN = 512
+MAX_VIEWPORT_W = 20000
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -85,6 +106,35 @@ def current_epoch_id(epoch_hours: Optional[float] = None, now: Optional[datetime
     epoch_hours = epoch_hours if epoch_hours is not None else _epoch_hours()
     now = now or datetime.now(timezone.utc)
     return int(now.timestamp() // (epoch_hours * 3600))
+
+
+async def _read_bounded_body(request: Request, limit: int) -> bytes:
+    """Read the request body in chunks, aborting with 413 the moment it
+    exceeds `limit` -- unlike checking the Content-Length header, this is
+    not spoofable by omitting/lying about that header or using chunked
+    transfer-encoding (F11-adjacent: cheap rejection of an oversized body
+    before it's ever handed to json.loads)."""
+    body = b""
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > limit:
+            raise HTTPException(status_code=413, detail="request body too large")
+    return body
+
+
+def _clamp_pct(value: object) -> Optional[int]:
+    """Coerce an interaction-event percent field to an int in [0, 100],
+    or None if it's absent/not a plain number. bool is explicitly
+    excluded even though Python's bool is an int subclass (True/False
+    are not meaningful percentages)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return max(0, min(int(round(value)), 100))
+    except (TypeError, ValueError):
+        return None
 
 
 def _client_ip(request: Request) -> str:
@@ -314,3 +364,158 @@ async def webhook(request: Request):
         raise HTTPException(status_code=500, detail=f"webhook processing failed: {exc}") from exc
 
     return JSONResponse({"status": "ok" if inserted else "duplicate", "event_id": event_id})
+
+
+# --- interaction capture (public, privacy-safe -- F8) ----------------------
+
+@app.post("/track")
+async def track(request: Request, response: Response):
+    body_bytes = await _read_bounded_body(request, MAX_TRACK_BODY_BYTES)
+    try:
+        raw_body = json.loads(body_bytes) if body_bytes else {}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"malformed JSON body: {exc}") from exc
+    if not isinstance(raw_body, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+
+    event_type = raw_body.get("event_type")
+    if event_type not in ALLOWED_INTERACTION_EVENT_TYPES:
+        raise HTTPException(status_code=400, detail="unknown event_type")
+
+    path = raw_body.get("path")
+    if not isinstance(path, str) or not path.startswith("/") or len(path) > MAX_PATH_LEN:
+        raise HTTPException(status_code=400, detail="invalid path")
+
+    viewport_w_raw = raw_body.get("viewport_w")
+    if isinstance(viewport_w_raw, bool) or not isinstance(viewport_w_raw, int):
+        raise HTTPException(status_code=400, detail="viewport_w must be an integer")
+    viewport_w = max(0, min(viewport_w_raw, MAX_VIEWPORT_W))
+
+    # Percentages are CLAMPED, not rejected (requirement 2) -- an
+    # out-of-range or malformed value degrades to null rather than
+    # failing the whole (otherwise-valid) event.
+    x_pct = _clamp_pct(raw_body.get("x_pct"))
+    y_pct = _clamp_pct(raw_body.get("y_pct"))
+    scroll_pct = _clamp_pct(raw_body.get("scroll_pct"))
+
+    # F8: session_id is never read from the client -- it comes solely
+    # from ANALYTICS_COOKIE_NAME, minted server-side exactly like
+    # visitor_id, and is a wholly separate token from it (never the
+    # pricing visitor_id, never PII).
+    session_id = request.cookies.get(ANALYTICS_COOKIE_NAME)
+    is_new_session = not session_id
+    if is_new_session:
+        session_id = secrets.token_urlsafe(16)
+
+    try:
+        with store.get_conn() as conn:
+            store.insert_interaction_event(
+                conn, session_id, event_type, path, x_pct, y_pct, scroll_pct, viewport_w,
+            )
+            conn.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"track failed: {exc}") from exc
+
+    if is_new_session:
+        response.set_cookie(
+            ANALYTICS_COOKIE_NAME,
+            session_id,
+            httponly=True,
+            secure=_cookie_secure(),
+            samesite="lax",
+            max_age=60 * 60 * 24 * 30,
+        )
+
+    return {"status": "ok"}
+
+
+# --- owner-only admin: auth + reads ------------------------------------------
+
+@app.post("/admin/login")
+async def admin_login(request: Request, response: Response):
+    body_bytes = await _read_bounded_body(request, MAX_LOGIN_BODY_BYTES)
+    try:
+        raw_body = json.loads(body_bytes) if body_bytes else {}
+    except Exception:
+        raw_body = {}
+    passcode = raw_body.get("passcode") if isinstance(raw_body, dict) else None
+    if not isinstance(passcode, str):
+        passcode = ""
+
+    if not owner_auth.check_passcode(passcode):
+        # Deliberately identical response/shape whether the passcode is
+        # wrong or OWNER_PASSCODE isn't configured at all -- no signal to
+        # a caller about which.
+        raise HTTPException(status_code=401, detail="invalid passcode")
+
+    try:
+        token = owner_auth.issue_session_token()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    response.set_cookie(
+        owner_auth.OWNER_COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=_cookie_secure(),
+        samesite="strict",
+        max_age=owner_auth.session_ttl_seconds(),
+    )
+    return {"status": "ok"}
+
+
+@app.get("/admin/metrics")
+def admin_metrics(_owner: None = Depends(owner_auth.require_owner)):
+    """Per-region arm/conversion/revenue + top-of-funnel counts. 401
+    without a valid owner session (enforced by the require_owner
+    dependency before this body runs)."""
+    try:
+        with store.get_conn() as conn:
+            regions = store.region_metrics(conn)
+            funnel = store.funnel_counts(conn)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"metrics query failed: {exc}") from exc
+
+    return {
+        "regions": [
+            {
+                "region": row["region"],
+                "price_cents": row["price_cents"],
+                "trials": row["trials"],
+                "conversions": row["conversions"],
+                "revenue_cents": row["revenue_cents"],
+            }
+            for row in regions
+        ],
+        "funnel": funnel,
+    }
+
+
+@app.get("/admin/heatmap")
+def admin_heatmap(path: str = "/", _owner: None = Depends(owner_auth.require_owner)):
+    """Aggregated click-density bins + scroll-depth histogram for one
+    path. AGGREGATE ONLY (F8) -- store.heatmap_bins never selects
+    session_id or any other per-row field into the response; only counts
+    grouped by bin/bucket leave the database. 401 without a valid owner
+    session."""
+    if not isinstance(path, str) or not path.startswith("/") or len(path) > MAX_PATH_LEN:
+        raise HTTPException(status_code=400, detail="invalid path")
+
+    try:
+        with store.get_conn() as conn:
+            click_bins, scroll_hist = store.heatmap_bins(conn, path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"heatmap query failed: {exc}") from exc
+
+    return {
+        "path": path,
+        "bin_size_pct": 10,
+        "click_bins": [
+            {"x_bin": row["x_bin"], "y_bin": row["y_bin"], "count": row["clicks"]}
+            for row in click_bins
+        ],
+        "scroll_depth_histogram": [
+            {"bucket_pct": row["bucket"] * 10, "sessions": row["sessions"]}
+            for row in scroll_hist
+        ],
+    }
