@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Owner dashboard</title>
+  <!--
+    Reuses the funnel/checkout page's token system verbatim (design spec
+    §1: "existing eight tokens carry over unchanged"). This file adds ONLY
+    new dashboard-scoped tokens/components in dashboard.css; styles.css
+    itself is untouched (MT-31 scope note).
+  -->
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to dashboard content</a>
+
+  <div id="app">
+    <!-- ================================================================ -->
+    <!-- LOCKED state (design spec §6.1): plain login form, no dashboard   -->
+    <!-- chrome visible behind it -- nothing here leaks that data exists.  -->
+    <!-- ================================================================ -->
+    <main id="login-view" class="login-shell">
+      <section class="card login-card" aria-labelledby="login-heading">
+        <h1 id="login-heading">Owner dashboard</h1>
+        <p class="value-prop">
+          Sign in with the operator passcode to view pricing, funnel, and
+          heatmap analytics. This area is private to the operator.
+        </p>
+        <form id="login-form" novalidate>
+          <label for="passcode-input">Passcode</label>
+          <input
+            id="passcode-input"
+            name="passcode"
+            type="password"
+            autocomplete="current-password"
+            required
+            aria-describedby="login-error"
+          />
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button type="submit" class="cta-button" id="login-submit">
+            <span id="login-submit-label">Sign in</span>
+            <span id="login-spinner" class="cta-spinner" aria-hidden="true" hidden>&#9696;</span>
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <!-- ================================================================ -->
+    <!-- DASHBOARD shell -- hidden entirely until an authenticated session -->
+    <!-- exists (never rendered "blurred" behind the login wall, §6.1).    -->
+    <!-- ================================================================ -->
+    <div id="dashboard-shell" hidden>
+      <header class="dash-header">
+        <h1>Owner dashboard</h1>
+        <p id="last-updated" class="last-updated" aria-live="polite"></p>
+      </header>
+
+      <div class="dash-body">
+        <nav class="dash-rail" aria-label="Dashboard sections">
+          <button type="button" class="rail-link" data-view="overview" aria-current="page">Overview</button>
+          <button type="button" class="rail-link" data-view="pricing">Pricing</button>
+          <button type="button" class="rail-link" data-view="funnel">Funnel</button>
+          <button type="button" class="rail-link" data-view="heatmap">Heatmap</button>
+        </nav>
+
+        <main id="main-content" class="dash-main" tabindex="-1">
+          <!-- LOADING state: static skeleton tiles, not shimmer, unless
+               motion is not reduced (mirrors MT-9's price-skeleton rule). -->
+          <div id="view-loading" class="view-loading" aria-hidden="true" hidden>
+            <div class="skeleton-tile"></div>
+            <div class="skeleton-tile"></div>
+            <div class="skeleton-tile"></div>
+            <div class="skeleton-block"></div>
+          </div>
+
+          <!-- ERROR state: fetch failed after auth succeeded. -->
+          <div id="view-error" class="view-error" role="alert" hidden>
+            <p id="view-error-message"></p>
+            <button type="button" id="retry-button" class="secondary-button">Retry</button>
+          </div>
+
+          <!-- ============================================================ -->
+          <!-- OVERVIEW: KPI row before any table/chart (§6.2, summary-first) -->
+          <!-- ============================================================ -->
+          <section id="view-overview" class="dash-view" aria-labelledby="overview-heading" hidden>
+            <h2 id="overview-heading">Overview</h2>
+            <div id="overview-empty" class="empty-state" hidden></div>
+            <div id="kpi-row" class="kpi-row"></div>
+            <div id="overview-regions" class="region-summary"></div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- PRICING: per-region arm table + status pills (§6.3, MT-4)     -->
+          <!-- ============================================================ -->
+          <section id="view-pricing" class="dash-view" aria-labelledby="pricing-heading" hidden>
+            <h2 id="pricing-heading">Pricing experiment</h2>
+            <p class="view-caveat">
+              Each row is one price point tested in a region. A region is
+              only marked <strong>Trending</strong> once it clears the
+              minimum-sample gate (50 conversions, same gate the pricing
+              engine uses) -- below that it reads
+              <strong>Gathering data</strong>, never a winner. This view does
+              not duplicate the pricing engine's statistical-significance
+              test, so it never labels an arm &ldquo;winner&rdquo;; a
+              decisive-winner read requires that computation and is a data-
+              contract gap flagged to backend-dev (design spec §9).
+            </p>
+            <div id="pricing-empty" class="empty-state" hidden></div>
+            <div id="pricing-table-wrap" class="table-wrap"></div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- FUNNEL: pageview -> cta_view -> cta_click -> order (§6.8)     -->
+          <!-- ============================================================ -->
+          <section id="view-funnel" class="dash-view" aria-labelledby="funnel-heading" hidden>
+            <h2 id="funnel-heading">Funnel drop-off</h2>
+            <p class="view-caveat">
+              Read with care: region/price-arm and returning-in-session
+              visitors are confounders here, not controlled for below --
+              segment before concluding a stage is "the" leak, and treat any
+              single-day read as a hypothesis, not a verdict (conversion-
+              psychology spec §5).
+            </p>
+            <div id="funnel-empty" class="empty-state" hidden></div>
+            <div id="funnel-bars" class="funnel-bars"></div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- HEATMAP: aggregate click density + scroll depth (§6.4/§6.5)   -->
+          <!-- ============================================================ -->
+          <section id="view-heatmap" class="dash-view" aria-labelledby="heatmap-heading" hidden>
+            <h2 id="heatmap-heading">Interaction heatmap</h2>
+
+            <form id="heatmap-path-form" class="heatmap-path-form">
+              <label for="heatmap-path-input">Page path</label>
+              <input id="heatmap-path-input" name="path" type="text" value="/" />
+              <button type="submit" class="secondary-button">Load</button>
+            </form>
+
+            <p class="heatmap-disclosure">
+              Aggregate click density and scroll depth across all sessions
+              for this path. <strong>Individual visitors are never shown or
+              tracked here</strong> -- every value below is a count summed
+              across sessions, never a single visitor's path (opsec-gate F8).
+            </p>
+
+            <div id="heatmap-empty" class="empty-state" hidden></div>
+
+            <div id="heatmap-content" hidden>
+              <div class="tablist" role="tablist" aria-label="Heatmap layer">
+                <button type="button" role="tab" id="tab-click" aria-controls="panel-click" aria-selected="true" data-layer="click">Click density</button>
+                <button type="button" role="tab" id="tab-scroll" aria-controls="panel-scroll" aria-selected="false" tabindex="-1" data-layer="scroll">Scroll depth</button>
+              </div>
+
+              <div class="heatmap-layout">
+                <div class="heatmap-visual">
+                  <div id="panel-click" role="tabpanel" aria-labelledby="tab-click">
+                    <div class="thumbnail-wrap">
+                      <div class="thumbnail-wireframe" aria-hidden="true">
+                        <img
+                          class="thumbnail-image"
+                          alt="Wireframe outline of the funnel page used as a positional reference for the click-density grid below."
+                          src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='700'%3E%3Crect width='400' height='700' fill='none'/%3E%3C/svg%3E"
+                        />
+                        <div id="click-grid" class="click-grid" aria-hidden="true"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="panel-scroll" role="tabpanel" aria-labelledby="tab-scroll" hidden>
+                    <div id="scroll-bands" class="scroll-bands" aria-hidden="true"></div>
+                  </div>
+                </div>
+
+                <div class="heatmap-legend">
+                  <p class="legend-title">Density scale</p>
+                  <div class="legend-ramp" aria-hidden="true">
+                    <span class="legend-swatch heat-0"></span>
+                    <span class="legend-swatch heat-1"></span>
+                    <span class="legend-swatch heat-2"></span>
+                    <span class="legend-swatch heat-3"></span>
+                    <span class="legend-swatch heat-4"></span>
+                  </div>
+                  <div class="legend-labels"><span>fewer</span><span>more</span></div>
+                </div>
+              </div>
+
+              <!-- §6.6: the grid above is aria-hidden and decorative; this
+                   table is the one and only accessible path to the same
+                   numbers, always visible, never behind a second toggle. -->
+              <div class="heatmap-tables">
+                <div>
+                  <h3>Top click-density zones</h3>
+                  <div id="click-table-wrap" class="table-wrap"></div>
+                </div>
+                <div>
+                  <h3>Scroll depth reached</h3>
+                  <div id="scroll-table-wrap" class="table-wrap"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

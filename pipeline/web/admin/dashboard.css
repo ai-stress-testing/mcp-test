@@ -1,0 +1,615 @@
+/*
+ * dashboard.css — owner-only analytics dashboard.
+ * Extends pipeline/web/styles.css (linked before this file, unchanged --
+ * MT-31 scope). Adds ONLY the dashboard-scoped tokens design spec §1/§2
+ * define ([NEW] surface-2, status-*, heat-0..4, text-* / space-* scale) plus
+ * dashboard components. No token here duplicates/forks the existing eight.
+ */
+
+:root {
+  --surface-2: #F1EFEA;
+
+  /* Status palette -- fixed, never themed (design spec §1). */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+
+  /* Click-density / scroll-depth sequential ramp -- fixed, never themed;
+     light-mode order (near-white surface: lightest = near zero). */
+  --heat-0: #86b6ef;
+  --heat-1: #5598e7;
+  --heat-2: #2a78d6;
+  --heat-3: #1c5cab;
+  --heat-4: #0d366b;
+
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.0625rem;
+  --text-xl: clamp(1.25rem, 4vw, 1.5rem);
+  --text-2xl: clamp(1.75rem, 5vw, 2.25rem);
+  --text-3xl: clamp(2.25rem, 6vw, 3rem);
+  --price-display: clamp(2rem, 8vw, 2.75rem);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-2: #23272C;
+
+    /* Dark-mode ramp is the light ramp traversed in reverse (design spec
+       §1): near-black surface, so "near zero" stays dark/recessive and
+       "max" goes light/bright to pop. Same five hexes, opposite order. */
+    --heat-0: #184f95;
+    --heat-1: #2a78d6;
+    --heat-2: #5598e7;
+    --heat-3: #9ec5f4;
+    --heat-4: #cde2fb;
+  }
+}
+
+/* --- Login view (reuses .card/.value-prop/.cta-button from styles.css) -- */
+
+.login-shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  min-height: 100vh;
+}
+
+.login-card label {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-bottom: var(--space-2);
+}
+
+.login-card input[type="password"],
+.login-card input[type="text"] {
+  width: 100%;
+  font: inherit;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--ink);
+  margin-bottom: var(--space-4);
+}
+
+.form-error {
+  color: var(--status-critical);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+}
+
+/* --- Dashboard shell ----------------------------------------------------- */
+
+#dashboard-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-header h1 {
+  font-size: var(--text-xl);
+  margin: 0;
+}
+
+.last-updated {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.dash-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+
+.dash-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.rail-link {
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-base);
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.rail-link[aria-current="page"] {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.dash-main {
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+.dash-main:focus {
+  outline: none;
+}
+
+.dash-view h2 {
+  font-size: var(--text-xl);
+  margin: 0 0 var(--space-4);
+}
+
+.view-caveat {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  max-width: 60ch;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--disclosure-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.secondary-button {
+  font: inherit;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* --- Loading (static skeleton, no shimmer unless motion is allowed) ----- */
+
+.view-loading {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.skeleton-tile,
+.skeleton-block {
+  border-radius: 0.75rem;
+  background: var(--border);
+}
+
+.skeleton-tile {
+  height: 6rem;
+}
+
+.skeleton-block {
+  height: 16rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-tile,
+  .skeleton-block {
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+/* --- Error state ---------------------------------------------------------- */
+
+.view-error {
+  background: var(--surface-2);
+  border: 1px solid var(--status-critical);
+  border-radius: 0.75rem;
+  padding: var(--space-5);
+}
+
+.view-error p {
+  margin: 0 0 var(--space-4);
+}
+
+/* --- Empty state (honest "not enough traffic yet", never fabricated) ---- */
+
+.empty-state {
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+  padding: var(--space-6);
+  color: var(--ink-muted);
+  max-width: 60ch;
+}
+
+.empty-state strong {
+  color: var(--ink);
+}
+
+/* --- KPI row / stat tile (design spec §7.1) ------------------------------ */
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.stat-tile {
+  background: var(--surface-2);
+  border-radius: 0.75rem;
+  padding: var(--space-4);
+}
+
+.stat-label {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-2);
+}
+
+.stat-figure {
+  font-size: var(--price-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.stat-sub {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.region-summary h3 {
+  font-size: var(--text-base);
+  margin: 0 0 var(--space-3);
+}
+
+/* --- Status pill (design spec §7.2) -------------------------------------- */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill .status-icon {
+  line-height: 1;
+}
+
+.status-pill.status-neutral {
+  background: var(--surface-2);
+  color: var(--ink-muted);
+}
+
+.status-pill.status-good {
+  background: color-mix(in srgb, var(--status-good) 18%, transparent);
+  color: var(--status-good);
+}
+
+.status-pill.status-warning {
+  background: color-mix(in srgb, var(--status-warning) 22%, transparent);
+  color: #8a5a00; /* darker than --status-warning itself: the pill's TEXT
+                      must independently clear contrast (design spec §8),
+                      since the token's own 1.79:1 fill-contrast is
+                      documented as sub-3:1 by design. */
+}
+
+@media (prefers-color-scheme: dark) {
+  .status-pill.status-warning {
+    color: #ffd27a;
+  }
+}
+
+.status-pill.status-critical {
+  background: color-mix(in srgb, var(--status-critical) 18%, transparent);
+  color: var(--status-critical);
+}
+
+/* --- Table (design spec §7.3) --------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+td.numeral,
+th.numeral {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+details.arm-history summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* --- Funnel bars (design spec §6.8) --------------------------------------- */
+
+.funnel-bars {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 640px;
+}
+
+.funnel-stage {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.funnel-stage-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.funnel-stage-label strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel-bar-track {
+  height: 1.75rem;
+  background: var(--surface-2);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.funnel-bar-fill {
+  height: 100%;
+  background: var(--heat-2);
+  border-radius: 0.375rem;
+}
+
+.funnel-drop {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* --- Heatmap --------------------------------------------------------------- */
+
+.heatmap-path-form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.heatmap-path-form label {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.heatmap-path-form input {
+  font: inherit;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.heatmap-disclosure {
+  max-width: 70ch;
+  color: var(--ink);
+  background: var(--disclosure-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-5);
+}
+
+.tablist {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.tablist [role="tab"] {
+  font: inherit;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.tablist [role="tab"][aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.heatmap-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) auto;
+  gap: var(--space-6);
+  align-items: start;
+  margin-bottom: var(--space-6);
+}
+
+.thumbnail-wrap {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.thumbnail-wireframe {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 7;
+}
+
+.thumbnail-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.click-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+}
+
+.click-cell {
+  outline: 1px solid color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.scroll-bands {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.scroll-band-row {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.scroll-band-label {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  text-align: right;
+}
+
+.scroll-band-track {
+  height: 1.25rem;
+  background: var(--surface-2);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.scroll-band-fill {
+  height: 100%;
+}
+
+.heatmap-legend {
+  min-width: 160px;
+}
+
+.legend-title {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.legend-ramp {
+  display: flex;
+  height: 1rem;
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.legend-swatch {
+  flex: 1;
+}
+
+.heat-0 { background: var(--heat-0); }
+.heat-1 { background: var(--heat-1); }
+.heat-2 { background: var(--heat-2); }
+.heat-3 { background: var(--heat-3); }
+.heat-4 { background: var(--heat-4); }
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  margin-top: var(--space-1);
+}
+
+.heatmap-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+.heatmap-tables h3 {
+  font-size: var(--text-base);
+  margin: 0 0 var(--space-3);
+}
+
+/* --- Narrow viewports: rail collapses to a top tab bar, not a            -->
+   horizontally-scrolling rail (design spec §8) ----------------------------- */
+
+@media (max-width: 720px) {
+  .dash-body {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .heatmap-layout,
+  .heatmap-tables {
+    grid-template-columns: 1fr;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
