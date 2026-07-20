@@ -1,0 +1,18 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Local env files (never commit real secrets; see environments/.gitignore too)
+.env
+.env.*
+!.env.example
