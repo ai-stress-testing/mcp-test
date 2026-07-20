@@ -288,6 +288,21 @@
   margin: 0 0 var(--space-3);
 }
 
+.region-summary-list {
+  max-width: 560px;
+  display: grid;
+  gap: 0;
+}
+
+.region-summary-list .funnel-stage-label {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.region-summary-list .funnel-stage-label:last-child {
+  border-bottom: none;
+}
+
 /* --- Status pill (design spec §7.2) -------------------------------------- */
 
 .status-pill {

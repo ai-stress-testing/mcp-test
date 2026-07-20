@@ -340,7 +340,7 @@
 
     var heading = el_("h3", null, "Regions at a glance");
     el.overviewRegions.appendChild(heading);
-    var list = el_("div");
+    var list = el_("div", "region-summary-list");
     Object.keys(byRegion)
       .sort()
       .forEach(function (region) {

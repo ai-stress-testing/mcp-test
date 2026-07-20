@@ -33,6 +33,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # pricing_engine.py lives one directory up (pipeline/), outside this
 # app's own package. KNOWN GAP (not this ticket's file to fix): the
@@ -191,9 +192,12 @@ def healthz():
     return {"status": "ok"}
 
 
+_WEB_DIR = os.path.join(_PIPELINE_DIR, "web")
+
+
 @app.get("/")
 def index():
-    web_index = os.path.join(_PIPELINE_DIR, "web", "index.html")
+    web_index = os.path.join(_WEB_DIR, "index.html")
     if os.path.exists(web_index):
         return FileResponse(web_index)
     return HTMLResponse(
@@ -201,6 +205,18 @@ def index():
         "<p>placeholder -- pipeline/web/index.html not present yet "
         "(pipeline/web/ is a separate ticket's seam).</p></body></html>"
     )
+
+
+@app.get("/admin")
+def admin_index():
+    # Serve the owner dashboard shell. The HTML is harmless to serve; the
+    # DATA is gated -- every /admin/* JSON route requires the owner session
+    # (owner_auth.require_owner), so an unauthenticated visitor sees only the
+    # login view and 401s from the endpoints.
+    admin_index_path = os.path.join(_WEB_DIR, "admin", "index.html")
+    if os.path.exists(admin_index_path):
+        return FileResponse(admin_index_path)
+    raise HTTPException(status_code=404, detail="admin dashboard not built")
 
 
 @app.post("/assign")
@@ -519,3 +535,11 @@ def admin_heatmap(path: str = "/", _owner: None = Depends(owner_auth.require_own
             for row in scroll_hist
         ],
     }
+
+
+# Static assets (funnel: styles.css/app.js/copy.js/track.js; dashboard:
+# admin/dashboard.css, admin/dashboard.js). Mounted at "/" LAST so every
+# explicit API route above matches first; this is only the fallback for
+# files. StaticFiles serves GET/HEAD only, so POST API routes are unaffected.
+if os.path.isdir(_WEB_DIR):
+    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")
