@@ -1,0 +1,47 @@
+# Build context is pipeline/ (widened from pipeline/app/ so the image can
+# include pricing_engine.py and web/ that the app imports/serves at
+# runtime — see pipeline/app/Dockerfile and main.py's _PIPELINE_DIR).
+# Keep the context to what the running image actually needs.
+
+# VCS / editor
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+
+# Env files — config comes from the process environment at container
+# start, never from a file baked into the image.
+.env
+.env.*
+!.env.example
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local virtualenvs — the image builds its own in the builder stage.
+.venv/
+venv/
+
+# Docker/meta files not needed inside the image itself.
+app/Dockerfile
+app/.dockerignore
+.dockerignore
+
+# The DB migrations are applied out-of-band (not from the app image); the
+# app talks to an already-migrated Postgres via the DAO.
+db/
+
+# Tests and docs don't need to ship in the runtime image.
+app/tests/
+**/README.md

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Offer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#price-block">Skip to offer</a>
+
+  <main id="main-content">
+    <!-- ============================================================ -->
+    <!-- Offer / checkout card (states: loading, ready, fallback,      -->
+    <!-- degraded). Hidden when a post-checkout view is showing.       -->
+    <!-- ============================================================ -->
+    <section id="offer-view" class="card" aria-labelledby="offer-heading">
+      <h1 id="offer-heading"></h1>
+      <p class="value-prop"></p>
+
+      <div id="price-block" tabindex="-1" aria-live="polite" aria-atomic="true">
+        <p class="price-value">
+          <span class="visually-hidden" id="price-label"></span>
+          <span id="price-number"></span>
+        </p>
+        <div id="price-skeleton" class="price-skeleton" aria-hidden="true" hidden></div>
+      </div>
+
+      <p id="degraded-message" class="degraded-message" hidden></p>
+
+      <div id="disclosure-strip" class="disclosure-strip">
+        <span class="disclosure-icon" aria-hidden="true">&#9432;</span>
+        <p class="disclosure-text">
+          <span id="disclosure-text-content"></span>
+          <a id="privacy-link" href="#"></a>
+        </p>
+      </div>
+
+      <button type="button" id="cta-button" class="cta-button" aria-describedby="disclosure-strip">
+        <span id="cta-label"></span>
+        <span id="cta-spinner" class="cta-spinner" aria-hidden="true" hidden>&#9696;</span>
+      </button>
+      <span id="cta-loading-note" class="visually-hidden"></span>
+
+      <p id="stripe-note" class="stripe-note"></p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Post-checkout: success (design spec §3.4)                     -->
+    <!-- ============================================================ -->
+    <section id="success-view" class="card post-checkout-body" hidden aria-labelledby="success-heading">
+      <h1 id="success-heading" class="post-checkout-heading"></h1>
+      <p id="success-purchase-line"></p>
+      <p id="success-price-line"></p>
+      <p id="success-receipt-note"></p>
+      <p id="success-next-steps"></p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Post-checkout: cancel — same offer page, no interstitial.     -->
+    <!-- (cancel reuses #offer-view; this node only carries the        -->
+    <!-- aria-live announcement text, visually nothing changes)        -->
+    <!-- ============================================================ -->
+    <p id="cancel-announcement" class="visually-hidden" aria-live="polite"></p>
+  </main>
+
+  <footer class="site-footer">
+    <nav aria-label="Legal">
+      <a id="footer-privacy" href="#">Privacy notice</a>
+      <a id="footer-terms" href="#">Terms</a>
+      <a id="footer-contact" href="#">Contact</a>
+    </nav>
+  </footer>
+
+  <script src="copy.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

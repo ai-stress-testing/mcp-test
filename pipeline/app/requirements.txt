@@ -1,0 +1,16 @@
+# pipeline/app/requirements.txt -- runtime deps for the pricing/checkout
+# app service (ADR-0002 Decision 3). No Supabase client libs (Decision 1
+# guardrail: this DAO speaks plain Postgres). Pinned to major versions
+# tested against for this ticket's runnable check.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+psycopg[binary]>=3.1,<4.0
+stripe>=10.0,<16.0
+
+# Test-only, but kept in this single requirements file per this ticket's
+# scope (pipeline/app/requirements.txt is the one file backend-dev owns
+# here) -- a leaner prod-only split is a future ticket's call, not made
+# unilaterally here.
+pytest>=8.0,<10.0
+httpx>=0.27,<1.0

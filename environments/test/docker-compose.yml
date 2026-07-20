@@ -7,12 +7,13 @@
 # not use yet; they are intentionally omitted, not forgotten — see
 # environments/README.md "Why this subset" for the seam to add one back.
 #
-# Parity contract: this file provisions the *database platform* only. It
-# does not build or reference the app image — the app container (built
-# elsewhere, promoted unmodified test -> prod) points at this stack via
-# env vars (SUPABASE_URL=http://localhost:${KONG_HTTP_PORT}, the anon/
-# service-role keys below). No app/business logic or schema lives here —
-# that is backend-dev's ticket (see ./volumes/db/init/README.md).
+# Parity contract: this file provisions the *database platform* plus the
+# `app` service (ADR-0002 Decision 3) built from pipeline/app/Dockerfile.
+# The app image itself is promoted unmodified test -> prod (no compose
+# file in prod at all — see environments/README.md and ADR-0002
+# Decision 4); only its injected env differs. No app source, business
+# logic, or DB schema lives in this repo path — those are backend-dev's
+# ticket (see pipeline/app/ and ./volumes/db/init/README.md).
 #
 # All images pinned to an explicit version — no `:latest` anywhere.
 
@@ -147,6 +148,62 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------
+  # app — the pricing/checkout request path (ADR-0002 Decision 3:
+  # docs/sprint-7-26-19-26/adr/ADR-0002-supabase-store-environments.md).
+  # This is the only service here that isn't part of the Supabase
+  # platform: a small FastAPI service talking to Postgres via the DAO
+  # (no Supabase client libs — Decision 1's guardrail). Built from
+  # pipeline/app/Dockerfile; app source, DB schema, and pipeline/web/ are
+  # backend-dev's / other tickets' seams, not this agent's.
+  #
+  # IMAGE PARITY: this image is built once and promoted test -> prod
+  # unmodified (environments/README.md, ADR-0002 Decision 4). Prod runs
+  # no compose file at all — the exact same image digest built here is
+  # simply pointed at environments/prod/.env's values (managed Postgres
+  # DATABASE_URL, live-mode Stripe keys) by the deploy platform. Only the
+  # injected env differs; nothing below bakes in a secret.
+  # ---------------------------------------------------------------------
+  app:
+    build:
+      # Context is pipeline/ (not pipeline/app/) so the image includes
+      # pricing_engine.py and web/ that the app imports/serves at runtime.
+      context: ../../pipeline
+      dockerfile: app/Dockerfile
+    image: mcp-test-app:test
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # DAO speaks plain Postgres (ADR-0002 Decision 1) — this points at
+      # the `db` service in-network for test; prod's DATABASE_URL points
+      # at the managed project instead. Same var name, env-supplied both
+      # places, never baked into the image.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?set STRIPE_SECRET_KEY in .env}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?set STRIPE_WEBHOOK_SECRET in .env}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      APP_ENV: ${APP_ENV:-test}
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      PRICE_FLOOR: ${PRICE_FLOOR:-}
+      PRICE_CEIL: ${PRICE_CEIL:-}
+    ports:
+      # App port, local-only in test; prod exposes this behind whatever
+      # the deploy platform fronts it with (not this file's concern).
+      # Default host port 8001, NOT 8000 — kong already claims host 8000
+      # (${KONG_HTTP_PORT:-8000}); the container's own port stays 8000
+      # either way (the app's fixed contract), only the host mapping
+      # moves to avoid the collision.
+      - "${APP_PORT:-8001}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     logging: *default-logging
 
 volumes:
